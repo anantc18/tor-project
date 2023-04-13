@@ -27,21 +27,6 @@ PACKETS = {}
 # }
 circuits = {}
 
-# Setup a socket for TOR
-def setup_socket():
-    # try:
-    #     sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
-    # except socket.error as msg:
-    #     print('error ' + str(msg[0]) + ': ' + msg[1])
-    #     sys.exit() 
-    
-    # global TOR_PORT
-    # sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
-    # sock.bind(('0.0.0.0', TOR_PORT))
-    sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(ETH_P_IP))
-
-    return sock
-
 # Setup a TOR circuit
 def setup_circ():
     tor_nodes = random.sample(TOR_DIRECTORY, 3)   # Randomly choose 3 nodes for TOR circuit
@@ -65,16 +50,6 @@ def decrypt(ciphertxt, key=None):
     msg = ciphertxt
     return msg
 
-# The last argument in this function `tor_node` takes 0,1, or 2 as value.
-# NOTE: This function is not being used currently
-def enc_ip_pkt(src_ip, dst_ip, pkt, circ_id, key):
-    ip_hdr = prepare_ip_hdr(src_ip, dst_ip, len(pkt))
-    circ_id = struct.pack('!H', circ_id)
-    enc_payload = encrypt(pkt, key)
-    
-    ip_pkt = ip_hdr + circ_id + enc_payload
-    return ip_pkt
-
 # Modify the TCP packet with new header values and return the updated packet
 def modify_tcp_pkt(pkt, src_ip, src_port, dst_ip, dst_port):
     ip_hdr = modify_ip_hdr(pkt[:20], src_ip, dst_ip)
@@ -89,13 +64,6 @@ def modify_tcp_pkt(pkt, src_ip, src_port, dst_ip, dst_port):
 
     new_pkt = ip_hdr + tcp_seg
     return new_pkt
-
-# Modify the IP packet with new header values and return the updated packet
-def modify_ip_pkt(pkt, src_ip, dst_ip):
-    ip_hdr = modify_ip_hdr(pkt[:20], src_ip, dst_ip)
-
-    pkt = ip_hdr + pkt[20:] 
-    return
 
 # Encrypt packet thrice and forward to entry node.
 def tor_encryption(circ_id, tor_nodes, pkt):
@@ -115,8 +83,8 @@ def tor_encryption(circ_id, tor_nodes, pkt):
     if proto_id == 6:
         # This is what the exit node will see after decrypting initial received packet.
         pkt0 = modify_tcp_pkt(pkt, src_ip, src_port, dst_ip, dst_port)
-    else:
-        pkt0 = modify_ip_pkt(pkt, src_ip, dst_ip)
+    # else:
+    #     pkt0 = modify_ip_pkt(pkt, src_ip, dst_ip)
 
     # Encrypt the packet using exit nodes key
     # Add IP header which should be for middle node --> exit node
@@ -142,18 +110,12 @@ def tor_encryption(circ_id, tor_nodes, pkt):
     ip_hdr3 = prepare_ip_hdr(src_ip, dst_ip, len(pkt2)+2 , proto_id)   # Here, IP packet length will be len(pkt2) + len(circ_id) = len(pkt2) + 2
     pkt3 = ip_hdr3 + circ_id_bytes + encrypt(pkt2, entry_node_key)
 
-    # NOTE: TESTING!!
-    pkt3 = tor_decryption(circ_id, tor_nodes, pkt3)
-
     return pkt3
 
 # Decrypt packet thrice and forward to application.
 def tor_decryption(circ_id, tor_nodes, pkt):
     # We receive packet which is encrypted thrice
     pkt3 = pkt
-
-    # Check the circuit ID after the IP header.
-    # circ_id = struct.unpack('!H', pkt[20:22])
 
     # Decrypt using entry node key
     entry_node_key = circuits[circ_id]['keys'][0]
@@ -221,7 +183,7 @@ if __name__ == "__main__":
     circ_id = setup_circ()
     tor_nodes = circuits[circ_id]['nodes']
 
-    sock = setup_socket()
+    sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(ETH_P_IP))
     print(sock)
     while(1):
         rcv_pkt = sock.recvfrom(0xffff)[0]
