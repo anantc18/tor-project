@@ -43,9 +43,11 @@ def setup_socket():
 
 # Setup a TOR circuit
 def setup_circ():
-    tor_nodes = random.sample(TOR_DIRECTORY, 3)   # Randomly choose 3 nodes for TOR circuit
+    # tor_nodes = random.sample(TOR_DIRECTORY, 3)   # Randomly choose 3 nodes for TOR circuit
+    tor_nodes = ['10.0.1.20', '10.0.3.20', '10.0.5.20']
     shared_keys = random.sample(KEYS, 3)          # Randomly choose 3 keys for each TOR node 
-    circ_id = random.randint(0, 65535)            # Randomly choose a cird_id. This should be unique in the TOR network.
+    # circ_id = random.randint(0, 65535)            # Randomly choose a cird_id. This should be unique in the TOR network.
+    circ_id = 111
     
     circuits[circ_id] = {}
     circuits[circ_id]['nodes'] = tor_nodes
@@ -56,7 +58,7 @@ def setup_circ():
     # circuits[CIRC_ID] = {}
     # circuits[CIRC_ID]['nodes'] = tor_nodes
     # circuits[CIRC_ID]['keys'] = shared_keys
-
+    print('circuit id = ', circ_id)
     return circ_id
 
 # Encrypt a message (in bytes)
@@ -86,6 +88,8 @@ def modify_tcp_pkt(pkt, src_ip, src_port, dst_ip, dst_port):
 
 # Encrypt packet thrice and forward to entry node.
 def tor_encryption(circ_id, tor_nodes, pkt):
+    print('Start TOR encryption')
+
     pkt_ip_hdr = unpack_ip_hdr(pkt[:20])
     pkt_tcp_hdr = unpack_tcp_hdr(pkt[20:40])
     proto_id = pkt_ip_hdr['ip_protocol']
@@ -111,16 +115,18 @@ def tor_encryption(circ_id, tor_nodes, pkt):
     src_ip = tor_nodes[1]
     dst_ip = tor_nodes[2]
     exit_node_key = circuits[circ_id]['keys'][2]
-    ip_hdr1 = prepare_ip_hdr(src_ip, dst_ip, len(pkt0)+2 , proto_id)   # Here, IP packet length will be len(pkt0) + len(circ_id) = len(pkt0) + 2
-    pkt1 = ip_hdr1 + circ_id_bytes + encrypt(pkt0, exit_node_key)
+    # ip_hdr1 = prepare_ip_hdr(src_ip, dst_ip, len(pkt0)+2 , proto_id)   # Here, IP packet length will be len(pkt0) + len(circ_id) = len(pkt0) + 2
+    # pkt1 = ip_hdr1 + circ_id_bytes + encrypt(pkt0, exit_node_key)
+    pkt1 = circ_id_bytes + encrypt(pkt0, exit_node_key)
 
     # Encrypt the packet using middle nodes key
     # Add IP header which should be for entry node --> middle node
     src_ip = tor_nodes[0]
     dst_ip = tor_nodes[1]
     middle_node_key = circuits[circ_id]['keys'][1]
-    ip_hdr2 = prepare_ip_hdr(src_ip, dst_ip, len(pkt1)+2 , proto_id)   # Here, IP packet length will be len(pkt1) + len(circ_id) = len(pkt1) + 2
-    pkt2 = ip_hdr2 + circ_id_bytes + encrypt(pkt1, middle_node_key)
+    # ip_hdr2 = prepare_ip_hdr(src_ip, dst_ip, len(pkt1)+2 , proto_id)   # Here, IP packet length will be len(pkt1) + len(circ_id) = len(pkt1) + 2
+    # pkt2 = ip_hdr2 + circ_id_bytes + encrypt(pkt1, middle_node_key)
+    pkt2 = circ_id_bytes + encrypt(pkt1, middle_node_key)
 
     # Encrypt the packet using entry nodes key
     # Add IP header which should be for client --> entry node
@@ -130,6 +136,9 @@ def tor_encryption(circ_id, tor_nodes, pkt):
     ip_hdr3 = prepare_ip_hdr(src_ip, dst_ip, len(pkt2)+2 , proto_id)   # Here, IP packet length will be len(pkt2) + len(circ_id) = len(pkt2) + 2
     pkt3 = ip_hdr3 + circ_id_bytes + encrypt(pkt2, entry_node_key)
 
+    print('End TOR encryption')
+    print('pkt3 = ', pkt3)
+    print('Length of pkt3 = ', len(pkt3))
     return pkt3
 
 # Decrypt packet thrice and forward to application.
@@ -143,11 +152,11 @@ def tor_decryption(circ_id, tor_nodes, pkt):
 
     # Decrypt using entry node key
     middle_node_key = circuits[circ_id]['keys'][1]
-    pkt1 = decrypt(pkt2[22:], entry_node_key)
+    pkt1 = decrypt(pkt2[2:], entry_node_key)
 
     # Decrypt using entry node key
     exit_node_key = circuits[circ_id]['keys'][2]
-    pkt0 = decrypt(pkt1[22:], entry_node_key)
+    pkt0 = decrypt(pkt1[2:], entry_node_key)
 
     return pkt0
 
@@ -189,14 +198,19 @@ def onion_route(circ_id, tor_nodes, pkt):
         final_pkt = tor_decryption(circ_id, tor_nodes, pkt)
 
         # Find out which port on the client system to forward to. 
-        final_pkt_ip_hdr = unpack_ip_hdr(pkt[:20])
-        final_pkt_tcp_hdr = unpack_tcp_hdr(pkt[20:40])
+
+        final_pkt_ip_hdr = unpack_ip_hdr(final_pkt[:20])
+        final_pkt_tcp_hdr = unpack_tcp_hdr(final_pkt[20:40])
+        
         dst_port = final_pkt_tcp_hdr['dst_port']
+
         if dst_port in PACKETS:
             if not final_pkt_ip_hdr['src_ip'] == PACKETS[dst_port][0]:
                 print("Some Error in Logic!!")
-        
-        sock.sendto(final_pkt, ('127.0.0.1', dst_port))
+
+        # sock.sendto(final_pkt, ('127.0.0.1', dst_port))
+
+        print(final_pkt)
 
     return
 

@@ -110,15 +110,18 @@ def checksum(msg):
 
 if __name__ == "__main__":
 
-    src_ip = "10.0.0.20"
+    src_ip = "127.0.0.1"
     src_port = 44444
     dst_ip = "10.0.6.20"
     dst_port = 44445
 
-    sock = setup_connection(src_ip, src_port)
+    sock1 = setup_connection(src_ip, src_port)
+    send_packet(sock1, prepare_packet(src_ip, src_port, dst_ip, dst_port), '127.0.0.1', 0)
 
-    send_packet(sock, prepare_packet(src_ip, src_port, dst_ip, dst_port), '127.0.0.1', 9050)
+    # sock2 = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    # sock2.bind(('127.0.0.1', 44444))
+    # print(sock2)
+    # response = sock2.recvfrom(0xffff)
 
-    response = sock.recvfrom(0xffff)
-    print(response)
+    # print(response)
     

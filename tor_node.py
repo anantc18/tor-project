@@ -15,6 +15,8 @@ INTERFACE = 'eth0'      # 'eth0' will only exist in a CORE container and not in 
 BUFSIZE = 0xFFFF
 SIZE_CIRC_ID = 2
 
+exit_dst_track = {}
+
 # Function to encrypt packets when response is headed back from server to client
 def encrypt_pkt(pkt, key):
     if (key == PRIVATE_KEY):
@@ -56,15 +58,24 @@ def onion_route(pkt):
         new_payload = decrypted_pkt[SIZE_CIRC_ID:]
 
         # Attach IP header to payload and craft packet to be sent
-        forward_pkt =  create_ip_hdr(src_ip=SELF_IP, dest_ip=NEXT_NEIGHBOR_IP, proto_id=IP_P_TCP, \
+
+        if NEXT_NEIGHBOR_IP != '0.0.0.0':       # Other than EXIT node
+            forward_pkt =  create_ip_hdr(src_ip=SELF_IP, dest_ip=NEXT_NEIGHBOR_IP, proto_id=IP_P_TCP, \
                                     payload_len=len(new_payload)) + new_payload
+            final_dst = NEXT_NEIGHBOR_IP
+
+        else:                                   # EXIT node
+            [in_built_ip_hdr, _] = read_ip_hdr(new_payload)     # Packet after decryption contains the final IP header from client
+            final_dst = in_built_ip_hdr['dest_ip']
+            exit_dst_track[pkt_circ_id] = final_dst             # Track the various destinations; used for encrypting later
+            forward_pkt = new_payload
         
         # Send packet on the wire
-        sock.sendto(forward_pkt, (NEXT_NEIGHBOR_IP, 0))
+        sock.sendto(forward_pkt, (final_dst, 0))
         return
 
     # Add onion layer
-    elif (ip_hdr['src_ip'] == NEXT_NEIGHBOR_IP):    
+    elif (NEXT_NEIGHBOR_IP != '0.0.0.0') and (ip_hdr['src_ip'] == NEXT_NEIGHBOR_IP):    
 
         # OPEN: What if the packet from NEXT_NEIGHBOR_IP isn't a TOR packet? How do we check?
 
@@ -82,6 +93,30 @@ def onion_route(pkt):
         # Send packet on the wire
         sock.sendto(forward_pkt, (PREV_NEIGHBOR_IP, 0))
         return
+    
+    elif NEXT_NEIGHBOR_IP == '0.0.0.0':         # EXIT node
+
+        circ_id_list = list(exit_dst_track.keys())
+        final_dst_list = list(exit_dst_track.values())
+
+        if ip_hdr['src_ip'] in final_dst_list:
+
+            circ_id = circ_id_list[final_dst_list.index(ip_hdr['src_ip'])]
+            try:
+                encrypted_pkt = encrypt_pkt(circ_id.to_bytes(SIZE_CIRC_ID, byteorder='big') + pkt, PRIVATE_KEY)
+            except:
+                print('\nCould not encrypt packet')
+                return      
+
+            # Attach IP header to payload and craft packet to be sent
+            forward_pkt =  create_ip_hdr(src_ip=SELF_IP, dest_ip=PREV_NEIGHBOR_IP, proto_id=IP_P_TCP, \
+                                    payload_len=len(encrypted_pkt)) + encrypted_pkt
+        
+            # Send packet on the wire
+            sock.sendto(forward_pkt, (PREV_NEIGHBOR_IP, 0))
+
+        return
+
     
     # Drop packets from non-TOR circuit nodes for now
     else:
