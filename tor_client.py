@@ -27,18 +27,37 @@ PACKETS = {}
 # }
 circuits = {}
 
+# Setup a socket for TOR
+def setup_socket():
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_TCP)
+    except socket.error as msg:
+        print('error ' + str(msg[0]) + ': ' + msg[1])
+        sys.exit() 
+    
+    global TOR_PORT
+    sock.setsockopt(socket.IPPROTO_IP, socket.IP_HDRINCL, 1)
+    # sock.bind(('127.0.0.1', TOR_PORT))
+    
+    return sock
+
 # Setup a TOR circuit
 def setup_circ():
     tor_nodes = random.sample(TOR_DIRECTORY, 3)   # Randomly choose 3 nodes for TOR circuit
     shared_keys = random.sample(KEYS, 3)          # Randomly choose 3 keys for each TOR node 
+    circ_id = random.randint(0, 65535)            # Randomly choose a cird_id. This should be unique in the TOR network.
+    
+    circuits[circ_id] = {}
+    circuits[circ_id]['nodes'] = tor_nodes
+    circuits[circ_id]['keys'] = shared_keys
+    
+    # global CIRC_ID
+    # CIRC_ID = CIRC_ID + 1   # Everytime a new circuit is setup, the CIRC_ID is incremented by 1. 
+    # circuits[CIRC_ID] = {}
+    # circuits[CIRC_ID]['nodes'] = tor_nodes
+    # circuits[CIRC_ID]['keys'] = shared_keys
 
-    global CIRC_ID
-    CIRC_ID = CIRC_ID + 1   # Everytime a new circuit is setup, the CIRC_ID is incremented by 1. 
-    circuits[CIRC_ID] = {}
-    circuits[CIRC_ID]['nodes'] = tor_nodes
-    circuits[CIRC_ID]['keys'] = shared_keys
-
-    return CIRC_ID
+    return circ_id
 
 # Encrypt a message (in bytes)
 def encrypt(msg, key=None):
@@ -75,7 +94,8 @@ def tor_encryption(circ_id, tor_nodes, pkt):
     # Change the IP and TCP header for the main packet. Also, you'll have to change the TCP pseudo header if the IP header is changed.
     # This is for the packet from exit node --> server
     src_ip = tor_nodes[2]
-    src_port = TOR_PORT
+    #src_port = TOR_PORT
+    src_port = pkt_tcp_hdr['src_port']
     dst_ip = pkt_ip_hdr['dst_ip']
     dst_port = pkt_tcp_hdr['dst_port']
 
@@ -133,7 +153,7 @@ def tor_decryption(circ_id, tor_nodes, pkt):
 
 
 def onion_route(circ_id, tor_nodes, pkt):
-
+    print(f"Received Packet ==> Src IP: {unpack_ip_hdr(rcv_pkt[:20])['src_ip']},  Dst IP: {unpack_ip_hdr(rcv_pkt[:20])['dst_ip']}")
     sock = socket.socket(socket.AF_INET, socket.SOCK_RAW, socket.IPPROTO_RAW)
 
     pkt_ip_hdr = unpack_ip_hdr(pkt[:20])
@@ -165,15 +185,17 @@ def onion_route(circ_id, tor_nodes, pkt):
     # If packet is a response from a server (via entry node), then decrypt the packet and forward it to the application that it was intended for. 
     elif pkt_ip_hdr['src_ip'] == entry_node:
         print(f"Received Packet from entry node")
-        # Find out which port on the client system to forward to. 
-        print("Dest port before = ", dst_port)
-        dst_details = [dst_ip, dst_port, proto_id]
-        for key, val in PACKETS.items():
-            if dst_details == val:
-                dst_port = key
-        print("Dest port after = ", dst_port)
-
+        
         final_pkt = tor_decryption(circ_id, tor_nodes, pkt)
+
+        # Find out which port on the client system to forward to. 
+        final_pkt_ip_hdr = unpack_ip_hdr(pkt[:20])
+        final_pkt_tcp_hdr = unpack_tcp_hdr(pkt[20:40])
+        dst_port = final_pkt_tcp_hdr['dst_port']
+        if dst_port in PACKETS:
+            if not final_pkt_ip_hdr['src_ip'] == PACKETS[dst_port][0]:
+                print("Some Error in Logic!!")
+        
         sock.sendto(final_pkt, ('127.0.0.1', dst_port))
 
     return
@@ -183,12 +205,13 @@ if __name__ == "__main__":
     circ_id = setup_circ()
     tor_nodes = circuits[circ_id]['nodes']
 
-    sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(ETH_P_IP))
+    sock = setup_socket()
+    # sock = socket.socket(socket.AF_PACKET, socket.SOCK_RAW, socket.ntohs(ETH_P_IP))
+    # sock.bind(('eth0', TOR_PORT))
     print(sock)
     while(1):
         rcv_pkt = sock.recvfrom(0xffff)[0]
-        rcv_pkt = rcv_pkt[14:]  # Remove 14 bytes of Ethernet header
-        print("Received Packet")
+        #rcv_pkt = rcv_pkt[14:]  # Remove 14 bytes of Ethernet header
         onion_route(circ_id, tor_nodes, rcv_pkt)
 
         
