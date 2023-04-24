@@ -2,6 +2,7 @@
 
 import os, sys, socket
 from custom_pkt import *
+from fernet_encryption import *
 
 # Obtain TOR configuration parameters from the environment
 PRIVATE_KEY = os.environ.get('TOR_PRIVATE_KEY')
@@ -18,18 +19,16 @@ SIZE_CIRC_ID = 2
 exit_dst_track = {}
 
 # Function to encrypt packets when response is headed back from server to client
-def encrypt_pkt(pkt, key):
-    if (key == PRIVATE_KEY):
-        return pkt
-    else:
-        return -1
+def encrypt_pkt(msg, key):    
+    fernet_obj = Fernet(key)
+    ciphertxt = fernet_obj.encrypt(msg)
+    return ciphertxt
 
 # Function to decrypt packets when request is headed from client to server
-def decrypt_pkt(pkt, key):
-    if (key == PRIVATE_KEY):
-        return pkt
-    else:
-        return -1
+def decrypt_pkt(ciphertxt, key):
+    fernet_obj = Fernet(key)
+    msg = fernet_obj.decrypt(ciphertxt)    
+    return msg
 
 # Function to perform TOR routing operations
 def onion_route(pkt):
@@ -44,8 +43,9 @@ def onion_route(pkt):
 
         # Decrypt packet and obtain its circuit ID
         try:
-            decrypted_pkt = decrypt_pkt(pkt_contents, PRIVATE_KEY)
-            pkt_circ_id = int.from_bytes(decrypted_pkt[0:SIZE_CIRC_ID], byteorder='big', signed=False)
+            encrypted_pkt = pkt_contents[SIZE_CIRC_ID:]
+            pkt_circ_id = int.from_bytes(pkt_contents[0:SIZE_CIRC_ID], byteorder='big', signed=False)
+            decrypted_pkt = decrypt_pkt(encrypted_pkt, PRIVATE_KEY)
         except:
             print('\nCould not decrypt packet')
             return      
@@ -55,7 +55,7 @@ def onion_route(pkt):
             return
         
         # Create payload to be forwarded to next TOR node
-        new_payload = decrypted_pkt[SIZE_CIRC_ID:]
+        new_payload = decrypted_pkt
 
         # Attach IP header to payload and craft packet to be sent
 
@@ -81,7 +81,8 @@ def onion_route(pkt):
 
         # Add circuit ID to packet and encrypt
         try:
-            encrypted_pkt = encrypt_pkt(CIRCUIT_ID.to_bytes(SIZE_CIRC_ID, byteorder='big') + pkt_contents, PRIVATE_KEY)
+            encrypted_pkt = CIRCUIT_ID.to_bytes(SIZE_CIRC_ID, byteorder='big') + encrypt_pkt(pkt_contents, PRIVATE_KEY)
+            
         except:
             print('\nCould not encrypt packet')
             return      
@@ -103,7 +104,7 @@ def onion_route(pkt):
 
             circ_id = circ_id_list[final_dst_list.index(ip_hdr['src_ip'])]
             try:
-                encrypted_pkt = encrypt_pkt(circ_id.to_bytes(SIZE_CIRC_ID, byteorder='big') + pkt, PRIVATE_KEY)
+                encrypted_pkt = circ_id.to_bytes(SIZE_CIRC_ID, byteorder='big') + encrypt_pkt(pkt, PRIVATE_KEY)
             except:
                 print('\nCould not encrypt packet')
                 return      

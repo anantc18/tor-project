@@ -4,13 +4,16 @@ import socket, sys, time, struct, random
 # from scapy.all import *
 import binascii
 from custom_pkt2 import *
+from fernet_encryption import *
 
-TOR_DIRECTORY = ['10.0.1.20', '10.0.2.20', '10.0.3.20', '10.0.4.20', '10.0.5.20']
-KEYS = ['a'*256, 'b'*256, 'c'*256, 'd'*256, 'e'*256]
-CIRC_ID = 0
+TOR_DIRECTORY = ['10.0.1.20', '10.0.3.20', '10.0.5.20']
+KEYS = ['7lVjtbrfz3AW_-kvjY8_0iI_ygkdDNr87SPxxQZCrh8=', 'QUT4K3xhT_cnMKAkL8FNqSDon-UTdM9NlRov6oG764s=', '0UxtjHYSht-zdUSv2Lh-Ckg5ZCtU9owJtNeHfHNGkf4=']
+CIRC_ID = 111
 TOR_PORT = 9050
 ETH_P_IP = 0x0800
 TOR_CLIENT_IP = '10.0.0.20'
+
+
 
 # Keeps track of all dest_ip and dest_ports in the request packets. This will be used to forward the response back to the appropriate application port number
 # PACKETS = {
@@ -43,11 +46,11 @@ def setup_socket():
 
 # Setup a TOR circuit
 def setup_circ():
-    # tor_nodes = random.sample(TOR_DIRECTORY, 3)   # Randomly choose 3 nodes for TOR circuit
-    tor_nodes = ['10.0.1.20', '10.0.3.20', '10.0.5.20']
-    shared_keys = random.sample(KEYS, 3)          # Randomly choose 3 keys for each TOR node 
-    # circ_id = random.randint(0, 65535)            # Randomly choose a cird_id. This should be unique in the TOR network.
-    circ_id = 111
+    # tor_nodes = random.sample(TOR_DIRECTORY, 3)   # choose 3 nodes for TOR circuit
+    tor_nodes = TOR_DIRECTORY
+    shared_keys = KEYS          # choose 3 keys for each TOR node 
+    # circ_id = random.randint(0, 65535)            #  choose a cird_id. This should be unique in the TOR network.
+    circ_id = CIRC_ID
     
     circuits[circ_id] = {}
     circuits[circ_id]['nodes'] = tor_nodes
@@ -62,14 +65,20 @@ def setup_circ():
     return circ_id
 
 # Encrypt a message (in bytes)
-def encrypt(msg, key=None):
-    ciphertxt = msg
+def encrypt(msg, key):    
+    fernet_obj = Fernet(key)
+    ciphertxt = fernet_obj.encrypt(msg)
     return ciphertxt
 
+
+
 # Decrypt a message (in bytes)
-def decrypt(ciphertxt, key=None):
-    msg = ciphertxt
+def decrypt(ciphertxt, key):
+    fernet_obj = Fernet(key)
+    msg = fernet_obj.decrypt(ciphertxt)    
     return msg
+
+
 
 # Modify the TCP packet with new header values and return the updated packet
 def modify_tcp_pkt(pkt, src_ip, src_port, dst_ip, dst_port):
@@ -152,11 +161,11 @@ def tor_decryption(circ_id, tor_nodes, pkt):
 
     # Decrypt using entry node key
     middle_node_key = circuits[circ_id]['keys'][1]
-    pkt1 = decrypt(pkt2[2:], entry_node_key)
+    pkt1 = decrypt(pkt2[2:], middle_node_key)
 
     # Decrypt using entry node key
     exit_node_key = circuits[circ_id]['keys'][2]
-    pkt0 = decrypt(pkt1[2:], entry_node_key)
+    pkt0 = decrypt(pkt1[2:], exit_node_key)
 
     return pkt0
 
@@ -211,6 +220,8 @@ def onion_route(circ_id, tor_nodes, pkt):
         # sock.sendto(final_pkt, ('127.0.0.1', dst_port))
 
         print(final_pkt)
+        print(unpack_ip_hdr(final_pkt[:20]))
+        print(unpack_tcp_hdr(final_pkt[20:40]))
 
     return
 
