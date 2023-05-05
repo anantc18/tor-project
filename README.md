@@ -1,11 +1,13 @@
-## How to run TOR routers?
+## How to run the code?
 
-1. Open the network1.xml in CORE
+1. Run the **network1.xml** file in CORE.
 
-2. On each of the entry, middle and exit PCs, run the network1_config.sh script
+2. On each of the entry, middle and exit nodes, run the **network1_config.sh** script followed by **tor_node.py**. These PCs now serve as the TOR routers for CircuitID 111.
 
-3. Then, on each of the entry, middle and exit PCs, run the tor_node.py script
+3. On the client node, run **tor_node.py**. This program encrypts outgoing packets and decrypts incoming packets from the client.
 
-4. Send a 3-layered packet from client and observe the unwrapped packet at facebook node
+4. Start Wireshark on eth0 interfaces for client, entry, exit, and the facebook nodes.
 
-5. Send an unwrapped packet from facebook and observe a 3-layered packet back at client
+5. On the client, run **tcp_syn.py**. This application sends a TCP SYN packet to the facebook node.
+
+6. Observe the TCP SYN packet and its response SYN ACK packet at various stages in the network.
