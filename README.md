@@ -4,7 +4,7 @@
 
 2. On each of the entry, middle and exit nodes, run the **network1_config.sh** script followed by **tor_node.py**. These PCs now serve as the TOR routers for CircuitID 111.
 
-3. On the client node, run **tor_node.py**. This program encrypts outgoing packets and decrypts incoming packets from the client.
+3. On the client node, run **tor_client.py**. This program encrypts outgoing packets and decrypts incoming packets from the client.
 
 4. Start Wireshark on eth0 interfaces for client, entry, exit, and the facebook nodes.
 
